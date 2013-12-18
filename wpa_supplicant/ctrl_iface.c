@@ -46,7 +46,28 @@ static int wpa_supplicant_global_iface_list(struct wpa_global *global,
 					    char *buf, int len);
 static int wpa_supplicant_global_iface_interfaces(struct wpa_global *global,
 						  char *buf, int len);
+static char * wpas_global_ctrl_iface_ifname(struct wpa_global *global,
+                                         const char *ifname,
+                                         char *cmd, size_t *resp_len)
+{
+        struct wpa_supplicant *wpa_s;
 
+        for (wpa_s = global->ifaces; wpa_s; wpa_s = wpa_s->next) {
+                if (os_strcmp(ifname, wpa_s->ifname) == 0)
+                        break;
+        }
+
+        if (wpa_s == NULL) {
+                char *resp = os_strdup("FAIL-NO-IFNAME-MATCH\n");
+                if (resp)
+                        *resp_len = os_strlen(resp);
+                else
+                        *resp_len = 1;
+                return resp;
+        }
+
+        return wpa_supplicant_ctrl_iface_process(wpa_s, cmd, resp_len);
+}
 
 static int pno_start(struct wpa_supplicant *wpa_s)
 {
@@ -4650,10 +4671,14 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 		wpa_supplicant_cancel_scan(wpa_s);
 		wpa_supplicant_deauthenticate(wpa_s,
 					      WLAN_REASON_DEAUTH_LEAVING);
-	} else if (os_strcmp(buf, "SCAN") == 0) {
+	} else if (os_strcmp(buf, "SCAN") == 0 ||
+		   os_strncmp(buf, "SCAN ", 5) == 0) {
 		if (wpa_s->wpa_state == WPA_INTERFACE_DISABLED)
 			reply_len = -1;
 		else {
+			if (os_strlen(buf) > 4 &&
+			    os_strncasecmp(buf + 5, "TYPE=ONLY", 9) == 0)
+				wpa_s->scan_res_handler = scan_only_handler;
 			if ((wpa_s->conf->concurrent_sched_scan ||
 			     !wpa_s->sched_scanning) &&
 			     !wpa_s->scanning &&
@@ -4997,6 +5022,15 @@ char * wpa_supplicant_global_ctrl_iface_process(struct wpa_global *global,
 	int reply_len;
 	int level = MSG_DEBUG;
 
+        if (os_strncmp(buf, "IFNAME=", 7) == 0) {
+                char *pos = os_strchr(buf + 7, ' ');
+                if (pos) {
+                        *pos++ = '\0';
+                        return wpas_global_ctrl_iface_ifname(global,
+                                                         buf + 7, pos,
+                                                         resp_len);
+                }
+        }
 	if (os_strcmp(buf, "PING") == 0)
 		level = MSG_EXCESSIVE;
 	wpa_hexdump_ascii(level, "RX global ctrl_iface",
@@ -5045,3 +5079,6 @@ char * wpa_supplicant_global_ctrl_iface_process(struct wpa_global *global,
 	*resp_len = reply_len;
 	return reply;
 }
+
+
+

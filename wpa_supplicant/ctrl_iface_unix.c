@@ -530,7 +530,8 @@ static void wpa_supplicant_ctrl_iface_send(struct ctrl_iface_priv *priv,
 	char levelstr[10];
 	int idx, res;
 	struct msghdr msg;
-	struct iovec io[2];
+	struct iovec io[5];
+        char *ifname = "wlan0";
 
 	if (priv->sock < 0 || dl_list_empty(&priv->ctrl_dst))
 		return;
@@ -538,13 +539,30 @@ static void wpa_supplicant_ctrl_iface_send(struct ctrl_iface_priv *priv,
 	res = os_snprintf(levelstr, sizeof(levelstr), "<%d>", level);
 	if (res < 0 || (size_t) res >= sizeof(levelstr))
 		return;
-	io[0].iov_base = levelstr;
-	io[0].iov_len = os_strlen(levelstr);
-	io[1].iov_base = (char *) buf;
-	io[1].iov_len = len;
-	os_memset(&msg, 0, sizeof(msg));
-	msg.msg_iov = io;
-	msg.msg_iovlen = 2;
+        
+        idx = 0;
+        if (ifname) {
+                io[idx].iov_base = "IFNAME=";
+                io[idx].iov_len = 7;
+                idx++;
+                io[idx].iov_base = (char *) ifname;
+                io[idx].iov_len = os_strlen(ifname);
+                idx++;
+                io[idx].iov_base = " ";
+                io[idx].iov_len = 1;
+                idx++;
+        }        
+	io[idx].iov_base = levelstr;
+        io[idx].iov_len = os_strlen(levelstr);
+        idx++;
+        io[idx].iov_base = (char *) buf;
+        io[idx].iov_len = len;
+        idx++;
+        os_memset(&msg, 0, sizeof(msg));
+        msg.msg_iov = io;
+        msg.msg_iovlen = idx;
+
+
 
 	idx = 0;
 	dl_list_for_each_safe(dst, next, &priv->ctrl_dst, struct wpa_ctrl_dst,
